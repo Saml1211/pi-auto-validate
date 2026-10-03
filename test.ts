@@ -64,6 +64,11 @@ try {
   assert(resolvedHome.startsWith(os.homedir()), "Tilde path must resolve to homedir");
   console.log("✓ Path resolution with ~ expansion verified");
 
+  // Windows absolute paths must not be joined onto cwd (regression: C:\x\y.py -> cwd\C:\x\y.py)
+  assert.equal(resolveFilePath("C:\\x\\y.py", "/cwd", path.win32.isAbsolute), "C:\\x\\y.py");
+  assert.equal(resolveFilePath("rel.py", "/cwd", path.win32.isAbsolute), path.join("/cwd", "rel.py"));
+  console.log("✓ Windows absolute path resolution verified");
+
   console.log("\nALL TESTS PASSED! pi-auto-validate is fully hardened.");
 } finally {
   fs.rmSync(testDir, { recursive: true, force: true });

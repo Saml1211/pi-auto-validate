@@ -1,6 +1,6 @@
 {
   "name": "pi-auto-validate",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Sub-20ms deterministic syntax error catchers & security gates for Pi Coding Agent file mutations",
   "main": "index.ts",
   "scripts": {
@@ -11,12 +11,18 @@
     "validation",
     "syntax-check",
     "fast-feedback",
-    "typesafe-jev"
+    "typesafe-jev",
+    "pi-package"
   ],
   "author": "Sam Lyndon",
   "license": "MIT",
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }

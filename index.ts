@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join, extname, basename } from "node:path";
+import { join, extname, basename, isAbsolute } from "node:path";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import type {
@@ -16,6 +16,17 @@ function resolveBunPath(): string {
   const homeBun = join(homedir(), ".bun/bin/bun");
   if (existsSync(homeBun)) return homeBun;
   return "bun";
+}
+
+// Windows: bare `bash` on PATH is often WSL's system32\bash.exe, which cannot read C:\ paths.
+// Use Git Bash only (same search order as Pi's getShellConfig); null => skip the .sh check.
+function resolveBashPath(): string | null {
+  if (process.platform !== "win32") return "bash";
+  for (const root of [process.env.ProgramFiles, process.env["ProgramFiles(x86)"]]) {
+    const gitBash = root && join(root, "Git", "bin", "bash.exe");
+    if (gitBash && existsSync(gitBash)) return gitBash;
+  }
+  return null;
 }
 
 function resolveJevApiKey(): string | undefined {
@@ -103,7 +114,8 @@ export function validateSyntax(filePath: string): ValidationResult {
   if (ext === ".py") {
     try {
       execFileSync(
-        "python3",
+        // ponytail: win32 python3 is often a Store stub; use `python`
+        process.platform === "win32" ? "python" : "python3",
         ["-I", "-c", "import ast, sys; ast.parse(open(sys.argv[1], 'rb').read())", filePath],
         {
           stdio: "pipe",
@@ -124,8 +136,10 @@ export function validateSyntax(filePath: string): ValidationResult {
 
   // 4. Shell script validation via bash -n (argv-based, immune to injection)
   if ([".sh", ".bash"].includes(ext)) {
+    const bashBin = resolveBashPath();
+    if (!bashBin) return { valid: true, toolUsed: "none" };
     try {
-      execFileSync("bash", ["-n", filePath], {
+      execFileSync(bashBin, ["-n", filePath], {
         stdio: "pipe",
         encoding: "utf8",
         timeout: 1000,
@@ -244,11 +258,11 @@ export async function checkCriticalFileRiskWithJev(
   }
 }
 
-export function resolveFilePath(targetPath: string, cwd = process.cwd()): string {
+export function resolveFilePath(targetPath: string, cwd = process.cwd(), isAbs = isAbsolute): string {
   if (targetPath.startsWith("~/")) {
     return join(homedir(), targetPath.slice(2));
   }
-  if (targetPath.startsWith("/")) {
+  if (isAbs(targetPath)) {
     return targetPath;
   }
   return join(cwd, targetPath);

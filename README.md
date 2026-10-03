@@ -23,6 +23,8 @@ Without deterministic hooks, the agent assumes the file was updated cleanly and 
 2. **Immediate Turn-1 Self-Repair**: Injects syntax errors directly into the tool result before the next turn begins.
 3. **TypeSafe Jev Critical File Audit**: Runs a calibrated risk check whenever sensitive files (`settings.json`, `auth.json`, `AGENTS.md`, `.env`) are edited.
 
+**Windows:** absolute `C:\` paths are honoured, `.py` uses `python` (not the `python3` Store stub), and `.sh` checks run with Git Bash only (`%ProgramFiles%\Git\bin\bash.exe`) — if it is absent the check is skipped silently, never falling back to WSL `bash`.
+
 ## Verification
 
 ```bash
