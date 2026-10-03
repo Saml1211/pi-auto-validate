@@ -58,7 +58,11 @@ console.log("✓ Shell script syntax validation verified via bash -n (clean pass
 
 // 5. Tool Result Hook Interception Test
 const eventHandlers = new Map();
+const registeredCommands = new Map();
 const mockPi = {
+  registerCommand(name: string, cmd: any) {
+    registeredCommands.set(name, cmd);
+  },
   on(event: string, handler: any) {
     if (!eventHandlers.has(event)) eventHandlers.set(event, []);
     eventHandlers.get(event).push(handler);
@@ -66,6 +70,8 @@ const mockPi = {
 };
 
 registerAutoValidate(mockPi as any);
+assert(registeredCommands.has("auto-validate"), "/auto-validate command must be registered");
+console.log("✓ Slash command registration verified: '/auto-validate'");
 const toolResultHandler = eventHandlers.get("tool_result")?.[0];
 assert(toolResultHandler, "tool_result handler must be registered");
 

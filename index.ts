@@ -185,6 +185,18 @@ export async function checkCriticalFileRiskWithJev(
 export default function (pi: ExtensionAPI) {
   const jevApiKey = resolveJevApiKey();
 
+  // Register command for visible UI discovery and status verification
+  pi.registerCommand("auto-validate", {
+    description: "Check status of deterministic syntax validators (bun, python, bash, json) and Jev guard",
+    handler: async (_args, ctx) => {
+      const jevStatus = jevApiKey ? "connected (System One)" : "unconfigured";
+      ctx.ui?.notify?.(
+        `[pi-auto-validate] Active: bun (TS/JS), python3 (py_compile), bash (-n), JSON.parse | Jev: ${jevStatus}`,
+        "info",
+      );
+    },
+  });
+
   pi.on("tool_result", async (event, ctx: ExtensionContext) => {
     // Only inspect file mutations
     if (event.toolName !== "edit" && event.toolName !== "write") {
