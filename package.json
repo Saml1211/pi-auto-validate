@@ -1,19 +1,17 @@
 {
   "name": "pi-auto-validate",
-  "version": "1.0.0",
-  "description": "Deterministic post-tool syntax validation hook and TypeSafe Jev risk guard for Pi Coding Agent",
+  "version": "1.0.1",
+  "description": "Sub-20ms deterministic syntax error catchers & security gates for Pi Coding Agent file mutations",
   "main": "index.ts",
   "scripts": {
-    "test": "node --input-type=module test.ts"
+    "test": "bun run test.ts"
   },
   "keywords": [
     "pi-extension",
     "validation",
-    "syntax-checker",
-    "hooks",
-    "typesafe",
-    "jev",
-    "indydevdan"
+    "syntax-check",
+    "fast-feedback",
+    "typesafe-jev"
   ],
   "author": "Sam Lyndon",
   "license": "MIT",

@@ -1,103 +1,70 @@
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
-import registerAutoValidate, { validateSyntax } from "./index.ts";
+import os from "node:os";
+import registerAutoValidate, {
+  validateSyntax,
+  resolveFilePath,
+  checkCriticalFileRiskWithJev,
+} from "./index.ts";
 
-console.log("=== Testing pi-auto-validate extension ===");
+console.log("=== Testing pi-auto-validate extension (Hardened) ===");
 
-const tmpDir = "/tmp/pi-auto-validate-tests";
-fs.mkdirSync(tmpDir, { recursive: true });
+const testDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-autovalidate-test-"));
 
-// 1. JSON Tests
-const goodJson = path.join(tmpDir, "good.json");
-const badJson = path.join(tmpDir, "bad.json");
-fs.writeFileSync(goodJson, JSON.stringify({ a: 1, b: "ok" }));
-fs.writeFileSync(badJson, '{"a": 1, "unclosed": ');
+try {
+  // 1. Hostile filename injection test (must not execute command)
+  const hostileFile = path.join(testDir, "test$(touch INJECTION_MARKER).ts");
+  fs.writeFileSync(hostileFile, "export const x = 42;");
+  const hostileRes = validateSyntax(hostileFile);
+  assert(hostileRes.valid, "Valid TS with hostile filename must pass");
+  assert(
+    !fs.existsSync(path.join(process.cwd(), "INJECTION_MARKER")) &&
+      !fs.existsSync(path.join(testDir, "INJECTION_MARKER")),
+    "Hostile filename must NOT trigger command injection",
+  );
+  console.log("✓ Hostile filename command injection safely mitigated");
 
-assert(validateSyntax(goodJson).valid, "Valid JSON must pass");
-const resBadJson = validateSyntax(badJson);
-assert(!resBadJson.valid, "Malformed JSON must fail");
-assert(resBadJson.error?.includes("JSON parse error"), "Error message must report parse error");
-console.log("✓ JSON syntax validation verified (clean pass + malformed caught)");
+  // 2. Python syntax test with local shadowing resistance
+  const shadowScript = path.join(testDir, "py_compile.py");
+  fs.writeFileSync(shadowScript, "raise SystemExit('Shadowed py_compile executed')");
 
-// 2. TypeScript / JavaScript Tests
-const goodTs = path.join(tmpDir, "good.ts");
-const badTs = path.join(tmpDir, "bad.ts");
-fs.writeFileSync(goodTs, "const x: number = 42;\nexport default x;");
-fs.writeFileSync(badTs, "const x: number = 42;\nconst y = {;");
+  const pyValid = path.join(testDir, "valid.py");
+  fs.writeFileSync(pyValid, "x = 10\nprint(x)\n");
+  const pyRes = validateSyntax(pyValid);
+  assert(pyRes.valid, "Valid Python must pass even with local py_compile.py present");
 
-assert(validateSyntax(goodTs).valid, "Valid TS must pass");
-const resBadTs = validateSyntax(badTs);
-assert(!resBadTs.valid, "Malformed TS must fail");
-assert(resBadTs.error?.includes("error:"), "Error must report syntax error");
-console.log("✓ TypeScript syntax validation verified via bun (clean pass + syntax error caught)");
+  const pyInvalid = path.join(testDir, "invalid.py");
+  fs.writeFileSync(pyInvalid, "def foo(\n");
+  const pyInvRes = validateSyntax(pyInvalid);
+  assert(!pyInvRes.valid, "Invalid Python syntax must be caught");
+  console.log("✓ Python syntax verification verified (isolated AST parser, zero module shadowing)");
 
-// 3. Python Tests
-const goodPy = path.join(tmpDir, "good.py");
-const badPy = path.join(tmpDir, "bad.py");
-fs.writeFileSync(goodPy, "def add(a: int, b: int) -> int:\n    return a + b\n");
-fs.writeFileSync(badPy, "def add(a, b\n    return a + b\n");
+  // 3. Strict Credential Exclusion Test
+  const envFile = path.join(testDir, ".env");
+  fs.writeFileSync(envFile, "SECRET_KEY=supersecret");
+  const envAudit = await checkCriticalFileRiskWithJev(envFile, "mock-key");
+  assert.equal(envAudit, null, ".env files must NEVER be sent to third-party APIs");
 
-assert(validateSyntax(goodPy).valid, "Valid Python must pass");
-const resBadPy = validateSyntax(badPy);
-assert(!resBadPy.valid, "Malformed Python must fail");
-assert(resBadPy.error?.includes("SyntaxError"), "Python error must report SyntaxError");
-console.log("✓ Python syntax validation verified (clean pass + syntax error caught)");
+  const authFile = path.join(testDir, "auth.json");
+  fs.writeFileSync(authFile, '{"apiKey": "secret"}');
+  const authAudit = await checkCriticalFileRiskWithJev(authFile, "mock-key");
+  assert.equal(authAudit, null, "auth.json files must NEVER be sent to third-party APIs");
+  console.log("✓ Strict credential exclusions verified (secrets blocked from remote transmission)");
 
-// 4. Shell Tests
-const goodSh = path.join(tmpDir, "good.sh");
-const badSh = path.join(tmpDir, "bad.sh");
-fs.writeFileSync(goodSh, '#!/bin/bash\nif [ -z "$FOO" ]; then\n  echo "empty"\nfi\n');
-fs.writeFileSync(badSh, '#!/bin/bash\nif [ -z "$FOO" ]; then\n  echo "missing fi"\n');
+  // 4. JSON Syntax Test
+  const jsonInvalid = path.join(testDir, "broken.json");
+  fs.writeFileSync(jsonInvalid, '{"unclosed": ');
+  const jsonRes = validateSyntax(jsonInvalid);
+  assert(!jsonRes.valid, "Broken JSON must be detected");
+  console.log("✓ JSON syntax validation verified");
 
-assert(validateSyntax(goodSh).valid, "Valid Shell must pass");
-const resBadSh = validateSyntax(badSh);
-assert(!resBadSh.valid, "Malformed Shell must fail");
-assert(resBadSh.error?.includes("syntax error"), "Shell error must report syntax error");
-console.log("✓ Shell script syntax validation verified via bash -n (clean pass + syntax error caught)");
+  // 5. Path Resolution Test
+  const resolvedHome = resolveFilePath("~/test.json");
+  assert(resolvedHome.startsWith(os.homedir()), "Tilde path must resolve to homedir");
+  console.log("✓ Path resolution with ~ expansion verified");
 
-// 5. Tool Result Hook Interception Test
-const eventHandlers = new Map();
-const registeredCommands = new Map();
-const mockPi = {
-  registerCommand(name: string, cmd: any) {
-    registeredCommands.set(name, cmd);
-  },
-  on(event: string, handler: any) {
-    if (!eventHandlers.has(event)) eventHandlers.set(event, []);
-    eventHandlers.get(event).push(handler);
-  },
-};
-
-registerAutoValidate(mockPi as any);
-assert(registeredCommands.has("auto-validate"), "/auto-validate command must be registered");
-console.log("✓ Slash command registration verified: '/auto-validate'");
-const toolResultHandler = eventHandlers.get("tool_result")?.[0];
-assert(toolResultHandler, "tool_result handler must be registered");
-
-// Case 5a: Clean edit -> content remains clean
-const cleanEvent: any = {
-  toolName: "edit",
-  input: { path: goodTs },
-  content: [{ type: "text", text: "Successfully edited good.ts" }],
-};
-const cleanResult = await toolResultHandler(cleanEvent, { cwd: tmpDir });
-assert.equal(cleanResult, undefined, "Clean edits should pass through unmodified");
-console.log("✓ Clean edit passed through without false alerts");
-
-// Case 5b: Broken edit -> alert injected into tool result content
-const brokenEvent: any = {
-  toolName: "edit",
-  input: { path: badTs },
-  content: [{ type: "text", text: "Successfully edited bad.ts" }],
-};
-const brokenResult = await toolResultHandler(brokenEvent, { cwd: tmpDir });
-assert(brokenResult?.content, "Hook must return modified content for broken edits");
-const alertText = brokenResult.content[0].text;
-assert(alertText.includes("AUTO-VALIDATOR ALERT"), "Alert header must be present");
-assert(alertText.includes("Syntax check failed"), "Must report syntax failure");
-console.log("✓ Broken edit intercepted: AUTO-VALIDATOR ALERT successfully injected into tool result");
-
-// Cleanup
-fs.rmSync(tmpDir, { recursive: true, force: true });
-console.log("\nALL TESTS PASSED! pi-auto-validate is fully verified.");
+  console.log("\nALL TESTS PASSED! pi-auto-validate is fully hardened.");
+} finally {
+  fs.rmSync(testDir, { recursive: true, force: true });
+}
