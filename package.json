@@ -1,0 +1,24 @@
+{
+  "name": "pi-auto-validate",
+  "version": "1.0.0",
+  "description": "Deterministic post-tool syntax validation hook and TypeSafe Jev risk guard for Pi Coding Agent",
+  "main": "index.ts",
+  "scripts": {
+    "test": "node --input-type=module test.ts"
+  },
+  "keywords": [
+    "pi-extension",
+    "validation",
+    "syntax-checker",
+    "hooks",
+    "typesafe",
+    "jev",
+    "indydevdan"
+  ],
+  "author": "Sam Lyndon",
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
