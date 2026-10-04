@@ -1,6 +1,6 @@
 {
   "name": "pi-auto-validate",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Sub-20ms deterministic syntax error catchers & security gates for Pi Coding Agent file mutations",
   "main": "index.ts",
   "scripts": {

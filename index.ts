@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
-import { join, extname, basename, isAbsolute } from "node:path";
+import { join, extname, basename, posix, win32 } from "node:path";
+import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import type {
@@ -258,14 +259,24 @@ export async function checkCriticalFileRiskWithJev(
   }
 }
 
-export function resolveFilePath(targetPath: string, cwd = process.cwd(), isAbs = isAbsolute): string {
-  if (targetPath.startsWith("~/")) {
-    return join(homedir(), targetPath.slice(2));
+// Mirrors Pi's write/edit resolver (dist/utils/paths.js resolvePath with normalizeUnicodeSpaces +
+// stripAtPrefix; not exported by the package) so we validate the exact file Pi mutated:
+// `@x` -> `x`, `~`/`~/`/`~\` (win32) -> home, win32 `/c/x` -> `C:\x`, `C:x` -> drive-relative, file:// URLs.
+export function resolveFilePath(targetPath: string, cwd = process.cwd(), platform: string = process.platform): string {
+  const p = platform === "win32" ? win32 : posix;
+  let t = targetPath.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, " ");
+  if (t.startsWith("@")) t = t.slice(1);
+  if (platform === "win32") {
+    const m = t.startsWith("/") && !t.startsWith("//") && !t.includes("\\")
+      ? t.match(/^\/(?:mnt\/|cygdrive\/)?([a-z])(?:\/(.*))?$/i)
+      : null;
+    if (m) t = `${m[1].toUpperCase()}:\\${m[2]?.replaceAll("/", "\\") ?? ""}`;
   }
-  if (isAbs(targetPath)) {
-    return targetPath;
-  }
-  return join(cwd, targetPath);
+  const tilde = (s: string) =>
+    s === "~" ? homedir() : s.startsWith("~/") || (platform === "win32" && s.startsWith("~\\")) ? p.join(homedir(), s.slice(2)) : s;
+  t = tilde(t);
+  if (/^file:\/\//.test(t)) t = fileURLToPath(t);
+  return p.isAbsolute(t) ? p.resolve(t) : p.resolve(tilde(cwd), t);
 }
 
 export default function (pi: ExtensionAPI) {

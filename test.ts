@@ -65,9 +65,28 @@ try {
   console.log("✓ Path resolution with ~ expansion verified");
 
   // Windows absolute paths must not be joined onto cwd (regression: C:\x\y.py -> cwd\C:\x\y.py)
-  assert.equal(resolveFilePath("C:\\x\\y.py", "/cwd", path.win32.isAbsolute), "C:\\x\\y.py");
-  assert.equal(resolveFilePath("rel.py", "/cwd", path.win32.isAbsolute), path.join("/cwd", "rel.py"));
+  assert.equal(resolveFilePath("C:\\x\\y.py", "C:\\cwd", "win32"), "C:\\x\\y.py");
+  assert.equal(resolveFilePath("rel.py", "C:\\cwd", "win32"), "C:\\cwd\\rel.py");
   console.log("✓ Windows absolute path resolution verified");
+
+  // Regression: validate the same path Pi's write/edit resolver (resolveToCwd) actually mutated.
+  const target = path.join(testDir, "broken-resolution.py");
+  fs.writeFileSync(target, "def broken(\n");
+  assert.equal(resolveFilePath("@broken-resolution.py", testDir), target, "Pi strips a leading @");
+  assert.equal(validateSyntax(resolveFilePath("@broken-resolution.py", testDir)).valid, false,
+    "checking a nonexistent @name must not silently pass");
+  assert.equal(resolveFilePath("~", "/cwd"), os.homedir());
+  assert.equal(resolveFilePath("a\u00A0b.py", "/cwd"), "/cwd/a b.py", "Pi normalises unicode spaces");
+  assert.equal(resolveFilePath("file:///tmp/x.py", "/cwd"), "/tmp/x.py");
+  assert.equal(resolveFilePath("../x.py", "/cwd/sub"), "/cwd/x.py");
+  // win32 semantics, checked on any host
+  assert.equal(resolveFilePath("C:broken.py", "C:\\cwd", "win32"), "C:\\cwd\\broken.py",
+    "drive-relative path resolves against the cwd of that drive, not cwd\\C:broken.py");
+  assert.equal(resolveFilePath("~\\x.py", "C:\\cwd", "win32"), path.win32.join(os.homedir(), "x.py"));
+  assert.equal(resolveFilePath("/c/x.py", "C:\\cwd", "win32"), "C:\\x.py");
+  assert.equal(resolveFilePath("/mnt/d/a/b.py", "C:\\cwd", "win32"), "D:\\a\\b.py");
+  assert.equal(resolveFilePath("@rel.py", "C:\\cwd", "win32"), "C:\\cwd\\rel.py");
+  console.log("✓ Pi-identical path resolution verified (@, ~, drive-relative, /c/, file://)");
 
   console.log("\nALL TESTS PASSED! pi-auto-validate is fully hardened.");
 } finally {
